@@ -1,3 +1,4 @@
+import datetime
 import time
 from flask import Blueprint, request, session, url_for
 from flask import render_template, redirect, jsonify
@@ -6,6 +7,8 @@ from authlib.integrations.flask_oauth2 import current_token
 from authlib.oauth2 import OAuth2Error
 from .models import db, User, OAuth2Client
 from .oauth2 import authorization, require_oauth
+from authlib.jose import jwt
+import json
 
 
 bp = Blueprint('home', __name__)
@@ -114,7 +117,36 @@ def authorize():
 
 @bp.route('/oauth/token', methods=['POST'])
 def issue_token():
-    return authorization.create_token_response()
+    # res_token = authorization.create_token_response()
+    # print(res_token)
+    # return res_token
+    header = {'alg': 'RS256'}
+
+    expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=120)
+
+    print('access_token_expires: ', expires)
+
+    payload = {'iss': 'Authlib', 'sub': '123', 'exp': expires}
+    # new_payload = create_access_token(data=payload, expires_delta=access_token_expires)
+
+    private_key = read_file('private.pem')
+        
+    access_token = jwt.encode(header, payload, private_key)
+    public_key = read_file('public.pem')
+    claims = jwt.decode(access_token, public_key)
+    print(claims)
+    print(claims.header)
+    print(access_token)
+
+    data = {
+        "access_token": access_token,
+        "token_type": "Bearer"
+    }
+
+    data["access_token"] = data["access_token"].decode("utf-8")
+    
+    return  json.dumps(data)
+
 
 
 @bp.route('/oauth/revoke', methods=['POST'])
@@ -127,3 +159,18 @@ def revoke_token():
 def api_me():
     user = current_token.user
     return jsonify(id=user.id, username=user.username)
+
+def read_file(filename):
+  fh = open(filename, "r")
+  try:
+      return fh.read()
+  finally:
+      fh.close()
+
+def create_access_token(*, data: dict, expires_delta: datetime.timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+    to_encode.update({'exp': expire})
